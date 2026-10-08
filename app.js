@@ -223,8 +223,20 @@ class ScheduleApp {
   async initData() {
     this.updateDbStatusPill();
     try {
-      this.members = await window.dbService.getMembers(INITIAL_MEMBERS);
-      this.schedules = await window.dbService.getSchedules(generateSampleSchedules());
+      this.members = await window.dbService.getMembers([]);
+      this.schedules = await window.dbService.getSchedules([]);
+
+      // 만약 DB가 비어있는 초기 상태라면, 기본 샘플 데이터 자동 적재
+      if (this.members.length === 0) {
+        const sampleSchedules = generateSampleSchedules();
+        try {
+          await window.dbService.bulkSeedData(INITIAL_MEMBERS, sampleSchedules);
+        } catch (seedErr) {
+          console.warn('초기 데이터 시딩 중 알림:', seedErr);
+        }
+        this.members = INITIAL_MEMBERS;
+        this.schedules = sampleSchedules;
+      }
     } catch (e) {
       console.warn('DB 로드 에러 (로컬 기본값 사용):', e);
       this.members = INITIAL_MEMBERS;

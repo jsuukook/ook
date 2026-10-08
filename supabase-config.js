@@ -11,18 +11,16 @@
  */
 
 window.SUPABASE_CONFIG = {
-  // 예: 'https://xyzcompany.supabase.co'
-  url: '',
-  // 예: 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...'
-  anonKey: ''
+  url: 'https://pjpjosqnkjrdoiyecyay.supabase.co',
+  anonKey: 'sb_publishable_NbcWWNSzAmBERC6LCnYXLw_bkyAFs8O'
 };
 
-// 스토리지에 저장된 설정이 있으면 우선 로드
+// 스토리지에 유효한 커스텀 설정이 저장되어 있는 경우에만 덮어쓰기
 (function loadSavedConfig() {
   const savedUrl = localStorage.getItem('supabase_url');
   const savedKey = localStorage.getItem('supabase_key');
-  if (savedUrl) window.SUPABASE_CONFIG.url = savedUrl;
-  if (savedKey) window.SUPABASE_CONFIG.anonKey = savedKey;
+  if (savedUrl && savedUrl.trim()) window.SUPABASE_CONFIG.url = savedUrl.trim();
+  if (savedKey && savedKey.trim()) window.SUPABASE_CONFIG.anonKey = savedKey.trim();
 })();
 
 // Supabase 클라이언트 인스턴스
