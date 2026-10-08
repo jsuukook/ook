@@ -1,0 +1,244 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>팀원 모니터링 일정 관리 대시보드</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Pretendard:wght@300;400;500;600;700;800&family=Noto+Sans+KR:wght@300;400;500;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <div class="app-container">
+    <!-- 사이드바 / 상단 네비게이션 헤더 -->
+    <header class="app-header">
+      <div class="header-left">
+        <div class="logo-area">
+          <div class="logo-icon">
+            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+              <rect x="2" y="3" width="20" height="14" rx="2" ry="2"></rect>
+              <line x1="8" y1="21" x2="16" y2="21"></line>
+              <line x1="12" y1="17" x2="12" y2="21"></line>
+              <path d="M7 10l3 3 7-7"></path>
+            </svg>
+          </div>
+          <div>
+            <h1 class="logo-title">팀원 모니터링 스케줄러</h1>
+            <p class="logo-subtitle">Team Monitoring Schedule Board</p>
+          </div>
+        </div>
+      </div>
+
+      <!-- 상단 컨트롤 (월/주 전환, 이전/다음 날짜) -->
+      <div class="header-center">
+        <div class="date-navigator">
+          <button id="btn-prev" class="nav-arrow-btn" title="이전">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"></polyline></svg>
+          </button>
+          <button id="btn-today" class="btn-today">오늘</button>
+          <button id="btn-next" class="nav-arrow-btn" title="다음">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"></polyline></svg>
+          </button>
+          <span id="current-period-title" class="current-period-title">2026년 10월</span>
+        </div>
+
+        <div class="view-mode-toggle">
+          <button id="view-month-btn" class="view-btn active">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"></rect><line x1="16" y1="2" x2="16" y2="6"></line><line x1="8" y1="2" x2="8" y2="6"></line><line x1="3" y1="10" x2="21" y2="10"></line></svg>
+            월간 뷰
+          </button>
+          <button id="view-week-btn" class="view-btn">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="3" y1="6" x2="21" y2="6"></line><line x1="3" y1="12" x2="21" y2="12"></line><line x1="3" y1="18" x2="21" y2="18"></line></svg>
+            주간 뷰
+          </button>
+        </div>
+      </div>
+
+      <!-- 우측 액션 버튼들 -->
+      <div class="header-right">
+        <button id="btn-manage-members" class="btn-outline">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path><circle cx="9" cy="7" r="4"></circle><path d="M23 21v-2a4 4 0 0 0-3-3.87"></path><path d="M16 3.13a4 4 0 0 1 0 7.75"></path></svg>
+          팀원 관리
+        </button>
+        <button id="btn-add-schedule" class="btn-primary">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>
+          일정 추가
+        </button>
+        <button id="btn-settings-data" class="btn-icon" title="데이터 관리 (백업/복원)">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"></circle><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path></svg>
+        </button>
+      </div>
+    </header>
+
+    <!-- 실시간 요약 카드 및 팀원 필터 바 -->
+    <section class="summary-and-filter-bar">
+      <div class="today-duty-card">
+        <span class="duty-label">오늘 모니터링 당번</span>
+        <div id="today-duty-list" class="duty-members">
+          <!-- 동적 생성 -->
+        </div>
+      </div>
+
+      <div class="filter-members-wrapper">
+        <span class="filter-label">팀원 필터:</span>
+        <div id="member-filter-chips" class="filter-chips">
+          <!-- 동적 생성 -->
+        </div>
+      </div>
+    </section>
+
+    <!-- 메인 캘린더 영역 -->
+    <main class="calendar-wrapper">
+      <!-- 월간 캘린더 뷰 -->
+      <div id="month-view" class="calendar-view active">
+        <div class="calendar-weekdays-header">
+          <div class="weekday sun">일</div>
+          <div class="weekday">월</div>
+          <div class="weekday">화</div>
+          <div class="weekday">수</div>
+          <div class="weekday">목</div>
+          <div class="weekday">금</div>
+          <div class="weekday sat">토</div>
+        </div>
+        <div id="month-grid" class="month-grid">
+          <!-- 35~42개 날짜 셀 동적 렌더링 -->
+        </div>
+      </div>
+
+      <!-- 주간 캘린더 뷰 -->
+      <div id="week-view" class="calendar-view">
+        <div class="week-columns-header" id="week-header-row">
+          <!-- 주간 요일/날짜 헤더 동적 생성 -->
+        </div>
+        <div class="week-columns-body" id="week-body-row">
+          <!-- 주간 7일 컬럼 동적 생성 -->
+        </div>
+      </div>
+    </main>
+  </div>
+
+  <!-- 일정 등록/수정 모달 -->
+  <div id="schedule-modal" class="modal-overlay hidden">
+    <div class="modal-card">
+      <div class="modal-header">
+        <h3 id="schedule-modal-title">모니터링 일정 추가</h3>
+        <button class="modal-close-btn" data-modal="schedule-modal">&times;</button>
+      </div>
+      <form id="schedule-form" class="modal-form">
+        <input type="hidden" id="schedule-id">
+
+        <div class="form-group">
+          <label for="schedule-member">담당 팀원 <span class="required">*</span></label>
+          <select id="schedule-member" required>
+            <!-- 팀원 목록 옵션 동적 추가 -->
+          </select>
+        </div>
+
+        <div class="form-row">
+          <div class="form-group">
+            <label for="schedule-date">날짜 <span class="required">*</span></label>
+            <input type="date" id="schedule-date" required>
+          </div>
+          <div class="form-group">
+            <label for="schedule-type">근무/모니터링 유형</label>
+            <select id="schedule-type">
+              <option value="종일">종일 모니터링</option>
+              <option value="주간">주간 (09:00 - 18:00)</option>
+              <option value="오전">오전 (09:00 - 13:00)</option>
+              <option value="오후">오후 (13:00 - 18:00)</option>
+              <option value="야간">야간/당직 (18:00 - 익일 09:00)</option>
+              <option value="비상대기">비상 대기 (On-Call)</option>
+            </select>
+          </div>
+        </div>
+
+        <div class="form-group">
+          <label for="schedule-notes">메모 / 특이사항</label>
+          <input type="text" id="schedule-notes" placeholder="예: 주요 서비스 배포 대응, 1차 연락망">
+        </div>
+
+        <div class="modal-footer">
+          <button type="button" id="btn-delete-schedule" class="btn-danger hidden">일정 삭제</button>
+          <div class="footer-right">
+            <button type="button" class="btn-cancel" data-modal="schedule-modal">취소</button>
+            <button type="submit" class="btn-primary">저장</button>
+          </div>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- 팀원 관리 모달 -->
+  <div id="member-modal" class="modal-overlay hidden">
+    <div class="modal-card modal-large">
+      <div class="modal-header">
+        <h3>팀원 목록 및 관리</h3>
+        <button class="modal-close-btn" data-modal="member-modal">&times;</button>
+      </div>
+      <div class="member-modal-content">
+        <!-- 신규 팀원 등록 폼 -->
+        <form id="new-member-form" class="member-add-box">
+          <h4>새 팀원 등록</h4>
+          <div class="member-inputs">
+            <input type="text" id="new-member-name" placeholder="팀원 이름 (예: 홍길동)" required>
+            <input type="text" id="new-member-role" placeholder="직책/역할 (예: 백엔드/인프라)">
+            <div class="color-picker-box">
+              <label>테마 색상:</label>
+              <div class="preset-colors" id="preset-colors">
+                <!-- 프리셋 색상 라디오 동적 생성 -->
+              </div>
+            </div>
+            <button type="submit" class="btn-primary">팀원 추가</button>
+          </div>
+        </form>
+
+        <!-- 기존 팀원 리스트 -->
+        <div class="member-list-section">
+          <h4>현재 등록된 팀원 (<span id="member-count">0</span>명)</h4>
+          <div id="member-list-container" class="member-cards-grid">
+            <!-- 동적 생성 -->
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 데이터 백업/복원 모달 -->
+  <div id="data-modal" class="modal-overlay hidden">
+    <div class="modal-card">
+      <div class="modal-header">
+        <h3>데이터 백업 및 초기화</h3>
+        <button class="modal-close-btn" data-modal="data-modal">&times;</button>
+      </div>
+      <div class="data-actions-content">
+        <p class="data-guide">모든 데이터(팀원 및 일정)는 브라우저에 안전하게 저장됩니다. 다른 기기로 옮기거나 백업할 수 있습니다.</p>
+        
+        <div class="action-buttons-stack">
+          <button id="btn-export-json" class="btn-outline full-width">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>
+            데이터 백업 다운로드 (.json)
+          </button>
+          
+          <label class="btn-outline full-width file-upload-btn">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="17 8 12 3 7 8"></polyline><line x1="12" y1="3" x2="12" y2="15"></line></svg>
+            데이터 복원 (파일 업로드)
+            <input type="file" id="json-file-input" accept=".json" style="display:none;">
+          </label>
+
+          <button id="btn-load-sample" class="btn-outline full-width">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="1 4 1 10 7 10"></polyline><polyline points="23 20 23 14 17 14"></polyline><path d="M20.49 9A9 9 0 0 0 5.64 5.64L1 10m22 4l-4.64 4.36A9 9 0 0 1 3.51 15"></path></svg>
+            예시 샘플 데이터 다시 채우기
+          </button>
+
+          <button id="btn-reset-all" class="btn-danger full-width">
+            전체 데이터 초기화 (삭제)
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script src="app.js"></script>
+</body>
+</html>
