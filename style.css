@@ -6,6 +6,10 @@
   --primary: #3b82f6;
   --primary-hover: #2563eb;
   --primary-light: #eff6ff;
+  --success: #10b981;
+  --success-light: #ecfdf5;
+  --warning: #f59e0b;
+  --warning-light: #fffbeb;
   --bg-main: #f8fafc;
   --bg-card: #ffffff;
   --text-main: #0f172a;
@@ -83,11 +87,59 @@ body {
   box-shadow: 0 4px 10px rgba(59, 130, 246, 0.3);
 }
 
+.title-with-pill {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
 .logo-title {
   font-size: 1.25rem;
   font-weight: 700;
   letter-spacing: -0.02em;
   color: var(--text-main);
+}
+
+/* DB 상태 뱃지 */
+.db-status-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 10px;
+  border-radius: 20px;
+  font-size: 0.75rem;
+  font-weight: 600;
+  background: #f1f5f9;
+  color: var(--text-muted);
+  border: 1px solid var(--border-color);
+  cursor: pointer;
+  transition: var(--transition);
+}
+
+.db-status-pill .status-indicator {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #94a3b8;
+  display: inline-block;
+  transition: background-color 0.2s ease;
+}
+
+.db-status-pill.connected {
+  background: var(--success-light);
+  color: #065f46;
+  border-color: #a7f3d0;
+}
+
+.db-status-pill.connected .status-indicator {
+  background: #10b981;
+  box-shadow: 0 0 6px #10b981;
+}
+
+.db-status-pill:hover {
+  filter: brightness(0.97);
+  transform: translateY(-1px);
 }
 
 .logo-subtitle {
@@ -193,6 +245,17 @@ body {
   display: flex;
   align-items: center;
   gap: 10px;
+}
+
+.btn-db-config {
+  color: #059669;
+  border-color: #a7f3d0;
+  background: #f0fdf4;
+}
+
+.btn-db-config:hover {
+  background: #dcfce7;
+  border-color: #86efac;
 }
 
 /* 버튼 공통 */
@@ -965,6 +1028,87 @@ body {
 
 .member-del-btn:hover {
   color: var(--danger);
+}
+
+/* ============================================================
+   5. Supabase 모달 스타일
+   ============================================================ */
+.supabase-modal-content {
+  padding: 24px;
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+.supabase-guide-steps {
+  background: #f0fdf4;
+  border: 1px solid #bbf7d0;
+  border-radius: var(--radius-md);
+  padding: 16px;
+}
+
+.supabase-guide-steps h4 {
+  font-size: 0.95rem;
+  font-weight: 700;
+  color: #166534;
+  margin-bottom: 10px;
+}
+
+.steps-list {
+  padding-left: 20px;
+  font-size: 0.875rem;
+  color: #14532d;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.steps-list a {
+  color: #15803d;
+  font-weight: 700;
+  text-decoration: underline;
+}
+
+.btn-copy-sql {
+  background: white;
+  border: 1px solid #86efac;
+  color: #166534;
+  padding: 2px 8px;
+  border-radius: 4px;
+  font-size: 0.8rem;
+  font-weight: 600;
+  cursor: pointer;
+  margin-left: 6px;
+  transition: var(--transition);
+}
+
+.btn-copy-sql:hover {
+  background: #dcfce7;
+}
+
+.supabase-form-inputs {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.connection-feedback {
+  padding: 10px 14px;
+  border-radius: var(--radius-sm);
+  font-size: 0.85rem;
+  font-weight: 600;
+}
+
+.connection-feedback.success {
+  background: #ecfdf5;
+  color: #065f46;
+  border: 1px solid #a7f3d0;
+}
+
+.connection-feedback.error {
+  background: #fef2f2;
+  color: #991b1b;
+  border: 1px solid #fecaca;
 }
 
 /* 데이터 관리 모달 */

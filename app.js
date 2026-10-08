@@ -1,5 +1,6 @@
 // ============================================================
 // 팀원 모니터링 일정 관리 대시보드 (Web App)
+// Supabase 클라우드 DB 연동 & LocalStorage 하이브리드 지원
 // ============================================================
 
 // 프리셋 색상 팔레트
@@ -28,9 +29,8 @@ const INITIAL_MEMBERS = [
 function generateSampleSchedules() {
   const today = new Date();
   const year = today.getFullYear();
-  const month = today.getMonth(); // 0-indexed
+  const month = today.getMonth();
 
-  // YYYY-MM-DD 포맷터
   const fmt = (d) => {
     const y = d.getFullYear();
     const m = String(d.getMonth() + 1).padStart(2, '0');
@@ -91,45 +91,48 @@ function generateSampleSchedules() {
   ];
 }
 
-// 애플리케이션 상태 (State)
+// SQL 스키마 텍스트 (모달에서 바로 복사 가능하도록 탑재)
+const SQL_SCHEMA_TEXT = `-- 1. 팀원(members) 테이블
+create table if not exists public.members (
+  id text primary key,
+  name text not null,
+  role text,
+  color text not null default '#3b82f6',
+  created_at timestamp with time zone default timezone('utc'::text, now()) not null
+);
+
+-- 2. 모니터링 일정(schedules) 테이블
+create table if not exists public.schedules (
+  id text primary key,
+  member_id text references public.members(id) on delete cascade,
+  date text not null,
+  type text not null,
+  notes text,
+  created_at timestamp with time zone default timezone('utc'::text, now()) not null
+);
+
+-- 3. Row Level Security(RLS) 공개 읽기/쓰기 허용 정책
+alter table public.members enable row level security;
+alter table public.schedules enable row level security;
+
+create policy "Allow public access for members" on public.members for all using (true) with check (true);
+create policy "Allow public access for schedules" on public.schedules for all using (true) with check (true);`;
+
+// 애플리케이션 클래스
 class ScheduleApp {
   constructor() {
-    this.currentDate = new Date(); // 현재 보고 있는 기준 날짜
+    this.currentDate = new Date();
     this.viewMode = 'month'; // 'month' | 'week'
-    this.selectedMemberFilter = null; // null: 전체 보기, string: 특정 memberId
+    this.selectedMemberFilter = null;
     this.selectedColor = PRESET_COLORS[0];
 
-    // 데이터 로드
-    this.members = this.loadStorage('app_members', INITIAL_MEMBERS);
-    this.schedules = this.loadStorage('app_schedules', generateSampleSchedules());
+    this.members = [];
+    this.schedules = [];
 
-    // DOM 요소 캐싱
     this.cacheDom();
-
-    // 초기화 및 이벤트 리스너 등록
     this.initPresetColors();
     this.bindEvents();
-    this.render();
-  }
-
-  // 스토리지 헬퍼
-  loadStorage(key, defaultVal) {
-    try {
-      const data = localStorage.getItem(key);
-      return data ? JSON.parse(data) : defaultVal;
-    } catch (e) {
-      console.warn('LocalStorage 로드 실패:', e);
-      return defaultVal;
-    }
-  }
-
-  saveStorage() {
-    try {
-      localStorage.setItem('app_members', JSON.stringify(this.members));
-      localStorage.setItem('app_schedules', JSON.stringify(this.schedules));
-    } catch (e) {
-      console.error('LocalStorage 저장 실패:', e);
-    }
+    this.initData();
   }
 
   cacheDom() {
@@ -141,10 +144,15 @@ class ScheduleApp {
     this.viewMonthBtn = document.getElementById('view-month-btn');
     this.viewWeekBtn = document.getElementById('view-week-btn');
 
+    // DB 상태 뱃지
+    this.dbStatusPill = document.getElementById('db-status-pill');
+    this.dbStatusText = document.getElementById('db-status-text');
+
     // 액션 버튼들
     this.btnAddSchedule = document.getElementById('btn-add-schedule');
     this.btnManageMembers = document.getElementById('btn-manage-members');
     this.btnSettingsData = document.getElementById('btn-settings-data');
+    this.btnSupabaseModal = document.getElementById('btn-supabase-modal');
 
     // 상단 요약 및 필터
     this.todayDutyList = document.getElementById('today-duty-list');
@@ -157,7 +165,7 @@ class ScheduleApp {
     this.weekHeaderRow = document.getElementById('week-header-row');
     this.weekBodyRow = document.getElementById('week-body-row');
 
-    // 모달들
+    // 일정 모달
     this.scheduleModal = document.getElementById('schedule-modal');
     this.scheduleForm = document.getElementById('schedule-form');
     this.scheduleModalTitle = document.getElementById('schedule-modal-title');
@@ -168,6 +176,7 @@ class ScheduleApp {
     this.scheduleNotesInput = document.getElementById('schedule-notes');
     this.btnDeleteSchedule = document.getElementById('btn-delete-schedule');
 
+    // 팀원 관리 모달
     this.memberModal = document.getElementById('member-modal');
     this.newMemberForm = document.getElementById('new-member-form');
     this.newMemberName = document.getElementById('new-member-name');
@@ -176,6 +185,17 @@ class ScheduleApp {
     this.memberListContainer = document.getElementById('member-list-container');
     this.memberCountSpan = document.getElementById('member-count');
 
+    // Supabase 설정 모달
+    this.supabaseModal = document.getElementById('supabase-modal');
+    this.supabaseConfigForm = document.getElementById('supabase-config-form');
+    this.inputSupabaseUrl = document.getElementById('input-supabase-url');
+    this.inputSupabaseKey = document.getElementById('input-supabase-key');
+    this.btnTestSupabase = document.getElementById('btn-test-supabase');
+    this.btnDisconnectSupabase = document.getElementById('btn-disconnect-supabase');
+    this.supabaseFeedback = document.getElementById('supabase-test-feedback');
+    this.btnCopySql = document.getElementById('btn-copy-sql');
+
+    // 데이터 백업/복원 모달
     this.dataModal = document.getElementById('data-modal');
     this.btnExportJson = document.getElementById('btn-export-json');
     this.jsonFileInput = document.getElementById('json-file-input');
@@ -199,8 +219,33 @@ class ScheduleApp {
     });
   }
 
+  // 초기 데이터 비동기 로드
+  async initData() {
+    this.updateDbStatusPill();
+    try {
+      this.members = await window.dbService.getMembers(INITIAL_MEMBERS);
+      this.schedules = await window.dbService.getSchedules(generateSampleSchedules());
+    } catch (e) {
+      console.warn('DB 로드 에러 (로컬 기본값 사용):', e);
+      this.members = INITIAL_MEMBERS;
+      this.schedules = generateSampleSchedules();
+    }
+    this.render();
+  }
+
+  // DB 상태 뱃지 업데이트
+  updateDbStatusPill() {
+    if (window.dbService && window.dbService.isSupabaseEnabled()) {
+      this.dbStatusPill.classList.add('connected');
+      this.dbStatusText.textContent = '🟢 Supabase 연결됨';
+    } else {
+      this.dbStatusPill.classList.remove('connected');
+      this.dbStatusText.textContent = '⚡ 로컬 모드';
+    }
+  }
+
   bindEvents() {
-    // 이전 / 다음 / 오늘 네비게이션
+    // 이전 / 다음 / 오늘
     this.btnPrev.addEventListener('click', () => this.navigate(-1));
     this.btnNext.addEventListener('click', () => this.navigate(1));
     this.btnToday.addEventListener('click', () => {
@@ -216,10 +261,12 @@ class ScheduleApp {
     this.btnAddSchedule.addEventListener('click', () => this.openScheduleModal());
     this.btnManageMembers.addEventListener('click', () => this.openMemberModal());
     this.btnSettingsData.addEventListener('click', () => this.openDataModal());
+    this.btnSupabaseModal.addEventListener('click', () => this.openSupabaseModal());
+    this.dbStatusPill.addEventListener('click', () => this.openSupabaseModal());
 
-    // 모달 닫기 버튼들
+    // 모달 닫기
     document.querySelectorAll('.modal-close-btn, .btn-cancel').forEach(btn => {
-      btn.addEventListener('click', (e) => {
+      btn.addEventListener('click', () => {
         const modalId = btn.dataset.modal;
         if (modalId) {
           document.getElementById(modalId).classList.add('hidden');
@@ -227,7 +274,7 @@ class ScheduleApp {
       });
     });
 
-    // 모달 바깥 배경 클릭 시 닫기
+    // 배경 클릭 시 닫기
     document.querySelectorAll('.modal-overlay').forEach(modal => {
       modal.addEventListener('click', (e) => {
         if (e.target === modal) {
@@ -236,21 +283,27 @@ class ScheduleApp {
       });
     });
 
-    // ESC 키로 모달 닫기
+    // ESC 키로 닫기
     document.addEventListener('keydown', (e) => {
       if (e.key === 'Escape') {
         document.querySelectorAll('.modal-overlay').forEach(m => m.classList.add('hidden'));
       }
     });
 
-    // 일정 저장 폼
+    // 일정 저장 / 삭제
     this.scheduleForm.addEventListener('submit', (e) => this.handleSaveSchedule(e));
     this.btnDeleteSchedule.addEventListener('click', () => this.handleDeleteSchedule());
 
-    // 신규 팀원 등록 폼
+    // 신규 팀원 등록
     this.newMemberForm.addEventListener('submit', (e) => this.handleAddMember(e));
 
-    // 데이터 백업 및 복원
+    // Supabase 설정 관련
+    this.supabaseConfigForm.addEventListener('submit', (e) => this.handleSaveSupabaseConfig(e));
+    this.btnTestSupabase.addEventListener('click', () => this.handleTestSupabase());
+    this.btnDisconnectSupabase.addEventListener('click', () => this.handleDisconnectSupabase());
+    this.btnCopySql.addEventListener('click', () => this.handleCopySql());
+
+    // 데이터 백업 / 복원
     this.btnExportJson.addEventListener('click', () => this.exportJson());
     this.jsonFileInput.addEventListener('change', (e) => this.importJson(e));
     this.btnLoadSample.addEventListener('click', () => this.loadSampleData());
@@ -274,7 +327,6 @@ class ScheduleApp {
     this.render();
   }
 
-  // 날짜 이동
   navigate(direction) {
     if (this.viewMode === 'month') {
       this.currentDate.setMonth(this.currentDate.getMonth() + direction);
@@ -284,7 +336,6 @@ class ScheduleApp {
     this.render();
   }
 
-  // 전체 화면 렌더링
   render() {
     this.updateHeaderTitle();
     this.renderTodayDuties();
@@ -304,7 +355,6 @@ class ScheduleApp {
     if (this.viewMode === 'month') {
       this.currentPeriodTitle.textContent = `${year}년 ${month}월`;
     } else {
-      // 주간 뷰의 경우 주차 표시
       const startOfWeek = this.getStartOfWeek(this.currentDate);
       const endOfWeek = new Date(startOfWeek);
       endOfWeek.setDate(startOfWeek.getDate() + 6);
@@ -318,7 +368,6 @@ class ScheduleApp {
     }
   }
 
-  // 오늘 모니터링 당번 렌더링
   renderTodayDuties() {
     const todayStr = this.formatDate(new Date());
     const todaySchedules = this.schedules.filter(s => s.date === todayStr);
@@ -344,11 +393,9 @@ class ScheduleApp {
     });
   }
 
-  // 팀원 필터 칩 렌더링
   renderMemberFilters() {
     this.memberFilterChips.innerHTML = '';
 
-    // '전체' 칩
     const allChip = document.createElement('button');
     allChip.className = `chip-btn ${this.selectedMemberFilter === null ? 'active' : ''}`;
     allChip.textContent = '전체 보기';
@@ -358,7 +405,6 @@ class ScheduleApp {
     });
     this.memberFilterChips.appendChild(allChip);
 
-    // 각 팀원 칩
     this.members.forEach(member => {
       const chip = document.createElement('button');
       chip.className = `chip-btn ${this.selectedMemberFilter === member.id ? 'active' : ''}`;
@@ -371,23 +417,17 @@ class ScheduleApp {
     });
   }
 
-  // 월간 달력 렌더링
   renderMonthView() {
     this.monthGrid.innerHTML = '';
 
     const year = this.currentDate.getFullYear();
     const month = this.currentDate.getMonth();
 
-    // 1일의 요일 (0: 일요일 ~ 6: 토요일)
     const firstDay = new Date(year, month, 1).getDay();
-    // 이번 달 총 일수
     const daysInMonth = new Date(year, month + 1, 0).getDate();
-    // 지난 달 마지막 날짜
     const daysInPrevMonth = new Date(year, month, 0).getDate();
 
     const todayStr = this.formatDate(new Date());
-
-    // 총 35칸 or 42칸 계산
     const totalCells = (firstDay + daysInMonth > 35) ? 42 : 35;
 
     for (let i = 0; i < totalCells; i++) {
@@ -395,22 +435,15 @@ class ScheduleApp {
       cell.className = 'month-cell';
 
       let cellDate;
-      let isCurrentMonth = true;
-
       if (i < firstDay) {
-        // 지난 달 날짜
         const d = daysInPrevMonth - firstDay + i + 1;
         cellDate = new Date(year, month - 1, d);
-        isCurrentMonth = false;
         cell.classList.add('other-month');
       } else if (i >= firstDay + daysInMonth) {
-        // 다음 달 날짜
         const d = i - (firstDay + daysInMonth) + 1;
         cellDate = new Date(year, month + 1, d);
-        isCurrentMonth = false;
         cell.classList.add('other-month');
       } else {
-        // 이번 달 날짜
         const d = i - firstDay + 1;
         cellDate = new Date(year, month, d);
       }
@@ -422,7 +455,6 @@ class ScheduleApp {
       if (dayOfWeek === 6) cell.classList.add('saturday');
       if (dateStr === todayStr) cell.classList.add('is-today');
 
-      // 셀 헤더 (날짜 번호 및 + 버튼)
       const header = document.createElement('div');
       header.className = 'cell-header';
 
@@ -443,11 +475,9 @@ class ScheduleApp {
       header.appendChild(addBtn);
       cell.appendChild(header);
 
-      // 일정 리스트 컨테이너
       const eventsList = document.createElement('div');
       eventsList.className = 'cell-events-list';
 
-      // 필터링 적용된 해당 날짜 일정
       const daySchedules = this.schedules.filter(s => {
         if (s.date !== dateStr) return false;
         if (this.selectedMemberFilter && s.memberId !== this.selectedMemberFilter) return false;
@@ -479,7 +509,6 @@ class ScheduleApp {
 
       cell.appendChild(eventsList);
 
-      // 빈 공간 클릭 시 일정 추가
       cell.addEventListener('click', () => {
         this.openScheduleModal(null, dateStr);
       });
@@ -488,7 +517,6 @@ class ScheduleApp {
     }
   }
 
-  // 주간 달력 렌더링
   renderWeekView() {
     this.weekHeaderRow.innerHTML = '';
     this.weekBodyRow.innerHTML = '';
@@ -503,7 +531,6 @@ class ScheduleApp {
       const dateStr = this.formatDate(d);
       const isToday = (dateStr === todayStr);
 
-      // 헤더 셀
       const headerCol = document.createElement('div');
       headerCol.className = `week-col-header-item ${isToday ? 'today' : ''}`;
       headerCol.innerHTML = `
@@ -512,11 +539,9 @@ class ScheduleApp {
       `;
       this.weekHeaderRow.appendChild(headerCol);
 
-      // 바디 컬럼
       const bodyCol = document.createElement('div');
       bodyCol.className = `week-col-body-item ${isToday ? 'today' : ''}`;
 
-      // 해당 날짜 일정 찾기
       const daySchedules = this.schedules.filter(s => {
         if (s.date !== dateStr) return false;
         if (this.selectedMemberFilter && s.memberId !== this.selectedMemberFilter) return false;
@@ -565,10 +590,9 @@ class ScheduleApp {
   }
 
   // ============================================================
-  // 일정 모달 처리
+  // 일정 모달 처리 (비동기 DB 연동)
   // ============================================================
   openScheduleModal(schedule = null, targetDate = null) {
-    // 팀원 옵션 채우기
     this.scheduleMemberSelect.innerHTML = '';
     if (this.members.length === 0) {
       alert('먼저 팀원을 1명 이상 등록해 주세요.');
@@ -584,7 +608,6 @@ class ScheduleApp {
     });
 
     if (schedule) {
-      // 수정 모드
       this.scheduleModalTitle.textContent = '모니터링 일정 수정';
       this.scheduleIdInput.value = schedule.id;
       this.scheduleMemberSelect.value = schedule.memberId;
@@ -593,7 +616,6 @@ class ScheduleApp {
       this.scheduleNotesInput.value = schedule.notes || '';
       this.btnDeleteSchedule.classList.remove('hidden');
     } else {
-      // 신규 추가 모드
       this.scheduleModalTitle.textContent = '모니터링 일정 추가';
       this.scheduleIdInput.value = '';
       this.scheduleMemberSelect.value = this.members[0].id;
@@ -606,9 +628,9 @@ class ScheduleApp {
     this.scheduleModal.classList.remove('hidden');
   }
 
-  handleSaveSchedule(e) {
+  async handleSaveSchedule(e) {
     e.preventDefault();
-    const id = this.scheduleIdInput.value;
+    const id = this.scheduleIdInput.value || ('s_' + Date.now());
     const memberId = this.scheduleMemberSelect.value;
     const date = this.scheduleDateInput.value;
     const type = this.scheduleTypeSelect.value;
@@ -619,38 +641,38 @@ class ScheduleApp {
       return;
     }
 
-    if (id) {
-      // 기존 일정 수정
+    const payload = { id, memberId, date, type, notes };
+
+    try {
+      await window.dbService.saveSchedule(payload);
+      // 로컬 배열 동기화
       const idx = this.schedules.findIndex(s => s.id === id);
       if (idx !== -1) {
-        this.schedules[idx] = { id, memberId, date, type, notes };
+        this.schedules[idx] = payload;
+      } else {
+        this.schedules.push(payload);
       }
-    } else {
-      // 신규 일정 추가
-      const newSchedule = {
-        id: 's_' + Date.now(),
-        memberId,
-        date,
-        type,
-        notes
-      };
-      this.schedules.push(newSchedule);
-    }
 
-    this.saveStorage();
-    this.scheduleModal.classList.add('hidden');
-    this.render();
+      this.scheduleModal.classList.add('hidden');
+      this.render();
+    } catch (err) {
+      alert('일정 저장 실패: ' + err.message);
+    }
   }
 
-  handleDeleteSchedule() {
+  async handleDeleteSchedule() {
     const id = this.scheduleIdInput.value;
     if (!id) return;
 
     if (confirm('이 모니터링 일정을 삭제하시겠습니까?')) {
-      this.schedules = this.schedules.filter(s => s.id !== id);
-      this.saveStorage();
-      this.scheduleModal.classList.add('hidden');
-      this.render();
+      try {
+        await window.dbService.deleteSchedule(id);
+        this.schedules = this.schedules.filter(s => s.id !== id);
+        this.scheduleModal.classList.add('hidden');
+        this.render();
+      } catch (err) {
+        alert('일정 삭제 실패: ' + err.message);
+      }
     }
   }
 
@@ -672,7 +694,6 @@ class ScheduleApp {
       const card = document.createElement('div');
       card.className = 'member-card';
 
-      // 이니셜
       const initial = member.name.charAt(0);
 
       card.innerHTML = `
@@ -700,7 +721,7 @@ class ScheduleApp {
     });
   }
 
-  handleAddMember(e) {
+  async handleAddMember(e) {
     e.preventDefault();
     const name = this.newMemberName.value.trim();
     const role = this.newMemberRole.value.trim();
@@ -717,24 +738,119 @@ class ScheduleApp {
       color: this.selectedColor
     };
 
-    this.members.push(newMember);
-    this.saveStorage();
-
-    this.newMemberName.value = '';
-    this.newMemberRole.value = '';
-    this.renderMemberList();
-    this.render();
+    try {
+      await window.dbService.addMember(newMember);
+      this.members.push(newMember);
+      this.newMemberName.value = '';
+      this.newMemberRole.value = '';
+      this.renderMemberList();
+      this.render();
+    } catch (err) {
+      alert('팀원 추가 실패: ' + err.message);
+    }
   }
 
-  deleteMember(memberId) {
-    this.members = this.members.filter(m => m.id !== memberId);
-    this.schedules = this.schedules.filter(s => s.memberId !== memberId);
-    if (this.selectedMemberFilter === memberId) {
-      this.selectedMemberFilter = null;
+  async deleteMember(memberId) {
+    try {
+      await window.dbService.deleteMember(memberId);
+      this.members = this.members.filter(m => m.id !== memberId);
+      this.schedules = this.schedules.filter(s => s.memberId !== memberId);
+      if (this.selectedMemberFilter === memberId) {
+        this.selectedMemberFilter = null;
+      }
+      this.renderMemberList();
+      this.render();
+    } catch (err) {
+      alert('팀원 삭제 실패: ' + err.message);
     }
-    this.saveStorage();
-    this.renderMemberList();
-    this.render();
+  }
+
+  // ============================================================
+  // Supabase 모달 처리
+  // ============================================================
+  openSupabaseModal() {
+    this.inputSupabaseUrl.value = window.SUPABASE_CONFIG.url || '';
+    this.inputSupabaseKey.value = window.SUPABASE_CONFIG.anonKey || '';
+    this.supabaseFeedback.className = 'connection-feedback hidden';
+    this.supabaseFeedback.textContent = '';
+    this.supabaseModal.classList.remove('hidden');
+  }
+
+  async handleTestSupabase() {
+    const url = this.inputSupabaseUrl.value.trim();
+    const key = this.inputSupabaseKey.value.trim();
+
+    if (!url || !key) {
+      this.showFeedback('error', 'URL과 anon Key를 모두 입력해 주세요.');
+      return;
+    }
+
+    this.showFeedback('', '연결 테스트 중...');
+    try {
+      await window.dbService.testConnection(url, key);
+      this.showFeedback('success', '✅ Supabase 연결 및 테이블 확인 성공!');
+    } catch (err) {
+      this.showFeedback('error', `❌ 연결 실패: ${err.message}\n(테이블 생성 SQL을 실행했는지 확인하세요)`);
+    }
+  }
+
+  async handleSaveSupabaseConfig(e) {
+    e.preventDefault();
+    const url = this.inputSupabaseUrl.value.trim();
+    const key = this.inputSupabaseKey.value.trim();
+
+    if (!url || !key) {
+      alert('URL과 anon Key를 입력해 주세요.');
+      return;
+    }
+
+    try {
+      this.showFeedback('', '연결 검증 중...');
+      await window.dbService.testConnection(url, key);
+      window.dbService.saveConfig(url, key);
+      this.updateDbStatusPill();
+
+      // 원격 데이터 로드 (만약 비어있다면 현재 로컬 데이터 업로드 제안)
+      const remoteMembers = await window.dbService.getMembers([]);
+      if (remoteMembers.length === 0 && this.members.length > 0) {
+        if (confirm('새 Supabase DB가 비어있습니다. 현재 로컬에 있는 데이터를 Supabase로 이전(업로드)할까요?')) {
+          await window.dbService.bulkSeedData(this.members, this.schedules);
+        }
+      }
+
+      await this.initData();
+      this.supabaseModal.classList.add('hidden');
+      alert('🎉 Supabase 데이터베이스가 성공적으로 연동되었습니다!');
+    } catch (err) {
+      this.showFeedback('error', `❌ 연동 실패: ${err.message}`);
+    }
+  }
+
+  handleDisconnectSupabase() {
+    if (confirm('Supabase 연동을 해제하고 브라우저 로컬 저장소 모드로 전환하시겠습니까?')) {
+      window.dbService.clearConfig();
+      this.updateDbStatusPill();
+      this.initData();
+      this.supabaseModal.classList.add('hidden');
+      alert('로컬 저장소 모드로 전환되었습니다.');
+    }
+  }
+
+  handleCopySql() {
+    navigator.clipboard.writeText(SQL_SCHEMA_TEXT).then(() => {
+      this.btnCopySql.textContent = '✅ 복사 완료!';
+      setTimeout(() => {
+        this.btnCopySql.textContent = '📋 SQL 복사하기';
+      }, 2500);
+    }).catch(err => {
+      alert('SQL 복사 실패: ' + err.message);
+    });
+  }
+
+  showFeedback(type, message) {
+    this.supabaseFeedback.className = `connection-feedback ${type}`;
+    this.supabaseFeedback.textContent = message;
+    this.supabaseFeedback.classList.remove('hidden');
   }
 
   // ============================================================
@@ -746,8 +862,9 @@ class ScheduleApp {
 
   exportJson() {
     const data = {
-      version: '1.0',
+      version: '1.1',
       exportedAt: new Date().toISOString(),
+      isSupabase: window.dbService.isSupabaseEnabled(),
       members: this.members,
       schedules: this.schedules
     };
@@ -766,14 +883,14 @@ class ScheduleApp {
     if (!file) return;
 
     const reader = new FileReader();
-    reader.onload = (event) => {
+    reader.onload = async (event) => {
       try {
         const json = JSON.parse(event.target.result);
         if (json.members && json.schedules) {
-          if (confirm('백업 파일을 불러오시겠습니까? 현재 데이터가 덮어씌워집니다.')) {
+          if (confirm('백업 파일을 불러오시겠습니까? 현재 데이터베이스 내용이 덮어씌워집니다.')) {
+            await window.dbService.bulkSeedData(json.members, json.schedules);
             this.members = json.members;
             this.schedules = json.schedules;
-            this.saveStorage();
             this.dataModal.classList.add('hidden');
             this.render();
             alert('데이터가 성공적으로 복원되었습니다.');
@@ -789,22 +906,23 @@ class ScheduleApp {
     e.target.value = '';
   }
 
-  loadSampleData() {
+  async loadSampleData() {
     if (confirm('예시 샘플 데이터로 다시 채우시겠습니까?')) {
+      const sampleSchedules = generateSampleSchedules();
+      await window.dbService.bulkSeedData(INITIAL_MEMBERS, sampleSchedules);
       this.members = INITIAL_MEMBERS;
-      this.schedules = generateSampleSchedules();
-      this.saveStorage();
+      this.schedules = sampleSchedules;
       this.dataModal.classList.add('hidden');
       this.render();
     }
   }
 
-  resetAllData() {
+  async resetAllData() {
     if (confirm('정말로 모든 팀원과 일정을 초기화(삭제)하시겠습니까?\n이 작업은 되돌릴 수 없습니다.')) {
+      await window.dbService.resetAll();
       this.members = [];
       this.schedules = [];
       this.selectedMemberFilter = null;
-      this.saveStorage();
       this.dataModal.classList.add('hidden');
       this.render();
     }
@@ -822,7 +940,7 @@ class ScheduleApp {
 
   getStartOfWeek(date) {
     const d = new Date(date);
-    const day = d.getDay(); // 0(일요일) ~ 6(토요일)
+    const day = d.getDay();
     const diff = d.getDate() - day;
     return new Date(d.setDate(diff));
   }
